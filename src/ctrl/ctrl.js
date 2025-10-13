@@ -29,21 +29,33 @@ function year_index(year) {
 
 function notify_progress() {
     document.getElementById('order_count_done').innerText = order_info['count_done'].toLocaleString()
-    document.getElementById('order_count_total').innerText = order_info['count_total'].toLocaleString()
+
+    // 月指定モードで件数計算中の場合は推定値表示
+    if (order_info['mode'] === 'month' && !order_info['month_count_calculated']) {
+        document.getElementById('order_count_total').innerText = order_info['count_total'].toLocaleString() + '(推定)'
+    } else {
+        document.getElementById('order_count_total').innerText = order_info['count_total'].toLocaleString()
+    }
+
     document.getElementById('order_price_total').innerText = order_info['price_total'].toLocaleString()
 
     var done_rate
     if (order_info['count_done'] == 0) {
         done_rate = 0
     } else {
-        done_rate = (100 * order_info['count_done']) / order_info['count_total']
+        // 月指定モードで推定中は100%を超えないように制限
+        if (order_info['mode'] === 'month' && !order_info['month_count_calculated'] && order_info['count_done'] > order_info['count_total']) {
+            done_rate = 100
+        } else {
+            done_rate = (100 * order_info['count_done']) / order_info['count_total']
+        }
     }
 
     progress_bar = document.getElementById('progress_bar')
     progress_bar.innerText = Math.round(done_rate) + '%'
     progress_bar.style.width = Math.round(done_rate) + '%'
 
-    if (done_rate > 0.1) {
+    if (done_rate > 0.1 && done_rate < 100) {
         now = new Date()
         elapsed_sec = Math.round((now.getTime() - start_time.getTime()) / 1000)
         remaining_sec = (elapsed_sec / done_rate) * (100 - done_rate)
@@ -170,9 +182,13 @@ function get_detail_in_order(order, index, mode, year, callback) {
 
             if (typeof response === 'undefined') {
                 status_error('意図しないエラーが発生しました．')
-                log.trace('BUG?')
                 return callback()
             }
+
+            if (typeof response === 'string') {
+                return callback()
+            }
+
             for (item of response['list']) {
                 item['date'] = response['date']
                 item_list.push(item)
@@ -194,25 +210,85 @@ function get_item_in_year(year, page, callback) {
             target: 'list',
             year: year,
             page: page,
-            page_total: Math.ceil(order_info['by_year']['count'][year_index(year)] / 10)
+            page_total: Math.ceil(order_info['by_year']['count'][year_index(year)] / 10),
+            month: order_info['target_month'] || null  // 月指定モードの場合
         },
         function (response) {
             return new Promise(function (resolve) {
+                var orders_to_process = response['list']
+
+                // 月指定モードの場合、該当月の注文のみフィルタリング
+                if (order_info['mode'] === 'month' && order_info['target_month']) {
+                    const targetMonth = order_info['target_month']
+                    const targetYear = order_info['target_year']
+
+                    orders_to_process = response['list'].filter(order => {
+                        // 日付形式: "2025/10/13"
+                        const dateParts = order.date.split('/')
+                        const orderYear = parseInt(dateParts[0])
+                        const orderMonth = parseInt(dateParts[1])
+                        return orderYear === targetYear && orderMonth === targetMonth
+                    })
+
+                    // 初回ページで月の合計件数を集計
+                    if (page === 1 && !order_info['month_count_calculated']) {
+                        // 全ページの月別件数を事前計算するフラグ
+                        order_info['month_orders_found'] = orders_to_process.length
+                        order_info['month_count_calculating'] = true
+                    } else if (order_info['month_count_calculating']) {
+                        order_info['month_orders_found'] += orders_to_process.length
+                    }
+                }
+
+                // 直近10件モードの場合は、取得する注文を制限
+                if (order_info['limit_count'] > 0) {
+                    var remaining = order_info['limit_count'] - order_info['count_done']
+                    if (remaining <= 0) {
+                        callback()
+                        return
+                    }
+                    orders_to_process = orders_to_process.slice(0, remaining)
+                }
+
                 async_loop(
-                    response['list'],
+                    orders_to_process,
                     0,
                     function (order, index, order_callback) {
                         var mode = 0
                         if (index == 0) {
                             mode |= 0x01
                         }
-                        if (index == response['list'].length - 1) {
+                        if (index == orders_to_process.length - 1) {
                             mode |= 0x10
                         }
                         get_detail_in_order(order, index, mode, year, order_callback)
                     },
                     function () {
-                        if (response['is_last']) {
+                        // 月指定モードの場合、全ページを確認する
+                        if (order_info['mode'] === 'month') {
+                            if (!response['is_last']) {
+                                return get_item_in_year(year, page + 1, callback)
+                            } else {
+                                // 最終ページに到達したら、実際の月の件数で更新
+                                if (order_info['month_count_calculating']) {
+                                    order_info['month_count_calculating'] = false
+                                    order_info['month_count_calculated'] = true
+
+                                    // 総件数を実際の月の件数に更新
+                                    const actualCount = order_info['month_orders_found']
+                                    order_info['count_total'] = actualCount
+                                    order_info['by_year']['count'][0] = actualCount  // 月指定は1年のみなので[0]
+
+                                    status_info(`${order_info['target_year']}年${order_info['target_month']}月: ${actualCount}件の注文が見つかりました`)
+                                    notify_progress()
+                                }
+                                callback()
+                            }
+                        }
+                        // 直近10件モードの場合、10件処理したら終了
+                        else if (order_info['limit_count'] > 0 && order_info['count_done'] >= order_info['limit_count']) {
+                            callback()
+                        } else if (response['is_last']) {
                             callback()
                         } else {
                             return get_item_in_year(year, page + 1, callback)
@@ -233,8 +309,22 @@ function get_order_count_in_year(year, callback) {
             year: year
         },
         function (response) {
-            order_info['count_total'] += response['count']
-            order_info['by_year']['count'][year_index(year)] = response['count']
+            var count = response['count']
+
+            // 月指定モードの場合、実際の件数は後で判明するので暫定値を使用
+            if (order_info['mode'] === 'month') {
+                // 暫定的に年全体の件数を設定（後で実際の月の件数に更新される）
+                status_info(`${year}年${order_info['target_month']}月の注文を確認中... (年間${count}件から検索)`)
+                // 見積もり値として年間件数の1/12を設定（暫定）
+                count = Math.ceil(count / 12)
+            }
+            // 直近10件モードの場合は、カウントを10に制限
+            else if (order_info['limit_count'] > 0 && count > order_info['limit_count']) {
+                count = order_info['limit_count']
+            }
+
+            order_info['count_total'] += count
+            order_info['by_year']['count'][year_index(year)] = count
 
             notify_progress()
             callback()
@@ -256,11 +346,38 @@ async function get_year_list() {
                 // response['list'] = [2002, 2001]
                 // response['list'] = [2005,2004,2003,2002,2001]
 
-                var target = parseInt(document.getElementById('target').value, 10)
+                const mode = document.getElementById('mode').value
                 year_list = response['list']
-                if (target != 0) {
-                    year_list = year_list.slice(0, target)
+
+                order_info['mode'] = mode
+                order_info['limit_count'] = 0
+
+                if (mode === 'recent') {
+                    // 直近10件の場合は最新年のみ、後で件数制限する
+                    year_list = year_list.slice(0, 1)
+                    order_info['limit_count'] = 10
+                } else if (mode === 'years') {
+                    // 年数指定モード
+                    const yearCount = parseInt(document.getElementById('year-count').value, 10)
+                    year_list = year_list.slice(0, yearCount)
+                } else if (mode === 'month') {
+                    // 月指定モード
+                    const selectedYear = parseInt(document.getElementById('year-select').value, 10)
+                    const selectedMonth = parseInt(document.getElementById('month-select').value, 10)
+
+                    // 選択された年のみを処理対象にする
+                    if (year_list.includes(selectedYear)) {
+                        year_list = [selectedYear]
+                        order_info['target_month'] = selectedMonth
+                        order_info['target_year'] = selectedYear
+                    } else {
+                        // 選択された年にデータがない場合
+                        status_error(selectedYear + '年のデータがありません')
+                        document.getElementById('start').disabled = false
+                        return
+                    }
                 }
+                // mode === 'all' の場合は全年を処理
 
                 order_info['year_list'] = year_list
 
@@ -309,6 +426,62 @@ async function get_year_list() {
             document.getElementById('start').disabled = false
         })
 }
+
+// モード切り替え時の表示制御
+document.getElementById('mode').onchange = function() {
+    const mode = document.getElementById('mode').value
+    const yearCount = document.getElementById('year-count')
+    const monthSelectors = document.getElementById('month-selectors')
+    const settingsCol = document.getElementById('settings-col')
+
+    // 全要素を非表示
+    yearCount.style.display = 'none'
+    monthSelectors.style.display = 'none'
+
+    // 選択モードに応じて表示制御
+    if (mode === 'years') {
+        yearCount.style.display = 'block'
+        settingsCol.style.display = 'block'
+    } else if (mode === 'month') {
+        monthSelectors.style.display = 'block'
+        settingsCol.style.display = 'block'
+        // 年のセレクトボックスを初期化（まだ年リストを取得していない場合）
+        initYearSelector()
+    } else {
+        // 'all' または 'recent' の場合は設定列を非表示
+        settingsCol.style.display = 'none'
+    }
+}
+
+// 年セレクタの初期化
+function initYearSelector() {
+    const yearSelect = document.getElementById('year-select')
+    if (yearSelect.options.length === 0) {
+        // 現在の年から過去10年分を生成
+        const currentYear = new Date().getFullYear()
+        for (let year = currentYear; year >= currentYear - 10; year--) {
+            const option = document.createElement('option')
+            option.value = year
+            option.textContent = year + '年'
+            yearSelect.appendChild(option)
+        }
+        // 現在の月をデフォルト選択
+        const currentMonth = new Date().getMonth() + 1
+        document.getElementById('month-select').value = currentMonth
+    }
+}
+
+// ページロード時の初期化
+window.addEventListener('DOMContentLoaded', function() {
+    // 初期状態でのレイアウト設定
+    const mode = document.getElementById('mode').value
+    const settingsCol = document.getElementById('settings-col')
+
+    // デフォルト状態では設定列を非表示
+    if (mode === 'all' || mode === 'recent') {
+        settingsCol.style.display = 'none'
+    }
+})
 
 document.getElementById('start').onclick = function () {
     document.getElementById('start').disabled = true

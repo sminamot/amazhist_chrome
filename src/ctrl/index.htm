@@ -22,16 +22,48 @@
                     Chrome で Amazon.co.jp にログインした状態でボタンを押すと購入履歴の集計が始まります．
                 </p>
 
-                <div class="row">
-                    <div class="col-6">
-                        <select class="form-select" id="target">
-                            <option value="0" selected>全部</option>
+                <div class="row align-items-center">
+                    <div class="col-auto">
+                        <select class="form-select" id="mode">
+                            <option value="all" selected>全部</option>
+                            <option value="recent">直近10件</option>
+                            <option value="years">年数指定</option>
+                            <option value="month">月指定</option>
+                        </select>
+                    </div>
+                    <div class="col-auto" id="settings-col" style="display: none;">
+                        <!-- 年数指定モード用 -->
+                        <select class="form-select" id="year-count" style="display: none;">
                             <option value="1">1年分</option>
                             <option value="2">2年分</option>
                             <option value="3">3年分</option>
+                            <option value="4">4年分</option>
+                            <option value="5">5年分</option>
                         </select>
+                        <!-- 月指定モード用 -->
+                        <div id="month-selectors" style="display: none;">
+                            <div class="d-flex gap-2">
+                                <select class="form-select" id="year-select" style="width: 120px;">
+                                    <!-- 動的に生成 -->
+                                </select>
+                                <select class="form-select" id="month-select" style="width: 90px;">
+                                    <option value="1">1月</option>
+                                    <option value="2">2月</option>
+                                    <option value="3">3月</option>
+                                    <option value="4">4月</option>
+                                    <option value="5">5月</option>
+                                    <option value="6">6月</option>
+                                    <option value="7">7月</option>
+                                    <option value="8">8月</option>
+                                    <option value="9">9月</option>
+                                    <option value="10">10月</option>
+                                    <option value="11">11月</option>
+                                    <option value="12">12月</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
-                    <div class="col-6">
+                    <div class="col-auto">
                         <button id="start" class="btn btn-primary">スタート</button>
                     </div>
                 </div>

@@ -165,7 +165,8 @@ async function cmd_handle_parse(cmd, send_response) {
             response['date'] = cmd['date']
             send_response(response)
         }
-        await sleep(1)
+        // 詳細ページの読み込みには時間がかかるため待機時間を増やす
+        await sleep(3)
     } else {
         status_error('未知のコマンドです．\n')
         return
