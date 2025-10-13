@@ -4,14 +4,29 @@ function chart_order_update() {
     if (chart_order == null) {
         return
     }
+
+    // 現在の表示モードを確認して適切なデータで更新
+    const isMonthly = document.getElementById('chart_monthly_view') &&
+                     document.getElementById('chart_monthly_view').checked
+
+    if (isMonthly && order_info && order_info['month_data_available']) {
+        // 月別表示モード
+        chart_order.data.labels = order_info['by_month']['labels']
+        chart_order.data.datasets[0].data = order_info['by_month']['count']
+        chart_order.data.datasets[1].data = order_info['by_month']['price']
+    } else if (order_info) {
+        // 年別表示モード
+        const yearLabels = order_info['year_list'].slice().reverse().map((year) => year + '年')
+        chart_order.data.labels = yearLabels
+        chart_order.data.datasets[0].data = order_info['by_year']['count'].slice().reverse()
+        chart_order.data.datasets[1].data = order_info['by_year']['price'].slice().reverse()
+    }
+
     chart_order.update()
 }
 
 function chart_order_create(order_info) {
     ctrl_elem = document.getElementById('chart_ctrl')
-    ctrl_elem.onclick = function () {
-        chart_order_update()
-    }
     ctrl_elem.style.display = 'block'
 
     if (chart_order != null) {
@@ -99,4 +114,40 @@ function chart_order_create(order_info) {
             }
         }
     })
+
+    // イベントハンドラーの設定
+    setup_chart_event_handlers()
+}
+
+function chart_order_toggle_view() {
+    if (!chart_order || !order_info) return
+
+    const isMonthly = document.getElementById('chart_monthly_view').checked
+
+    if (isMonthly && order_info['month_data_available']) {
+        // 月別表示
+        chart_order.data.labels = order_info['by_month']['labels']
+        chart_order.data.datasets[0].data = order_info['by_month']['count']
+        chart_order.data.datasets[1].data = order_info['by_month']['price']
+    } else {
+        // 年別表示
+        const yearLabels = order_info['year_list'].slice().reverse().map((year) => year + '年')
+        chart_order.data.labels = yearLabels
+        chart_order.data.datasets[0].data = order_info['by_year']['count'].slice().reverse()
+        chart_order.data.datasets[1].data = order_info['by_year']['price'].slice().reverse()
+    }
+
+    chart_order.update()
+}
+
+function setup_chart_event_handlers() {
+    // 価格表示チェックボックス
+    document.getElementById('chart_display_price').onchange = function () {
+        chart_order_update()
+    }
+
+    // 月別表示チェックボックス
+    document.getElementById('chart_monthly_view').onchange = function () {
+        chart_order_toggle_view()
+    }
 }

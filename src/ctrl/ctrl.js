@@ -10,7 +10,14 @@ function state_init() {
         count_total: 0,
         count_done: 0,
         price_total: 0,
-        by_year: {}
+        by_year: {},
+        by_month: {
+            labels: [],
+            count: [],
+            price: []
+        },
+        month_data: new Map(), // 月別データの一時保存用
+        month_data_available: false
     }
 
     document.getElementById('status').value = ''
@@ -24,6 +31,63 @@ function year_index(year) {
             return index
         }
         index++
+    }
+}
+
+function collect_monthly_data(date, count, price) {
+    // 日付形式: "2025/10/13" から "2025-10" を作成
+    const dateParts = date.split('/')
+    const yearMonth = dateParts[0] + '-' + dateParts[1].padStart(2, '0')
+
+    if (order_info['month_data'].has(yearMonth)) {
+        const existing = order_info['month_data'].get(yearMonth)
+        existing.count += count
+        existing.price += price
+    } else {
+        order_info['month_data'].set(yearMonth, {
+            count: count,
+            price: price
+        })
+    }
+
+    // 月別データが1ヶ月以上になったら即座にチェックボックスを有効化
+    if (order_info['month_data'].size >= 1 && !order_info['month_data_available']) {
+        order_info['month_data_available'] = true
+        document.getElementById('chart_monthly_view').disabled = false
+    }
+
+    // 月別データが1ヶ月以上ある場合は常にリアルタイムで更新
+    if (order_info['month_data'].size >= 1) {
+        update_monthly_chart_data()
+    }
+}
+
+function update_monthly_chart_data() {
+    // 月別データを配列形式に変換してソート
+    const monthEntries = Array.from(order_info['month_data'].entries())
+    monthEntries.sort((a, b) => a[0].localeCompare(b[0]))
+
+    // ラベルとデータを分離
+    order_info['by_month']['labels'] = monthEntries.map(entry => {
+        const [year, month] = entry[0].split('-')
+        return year + '年' + parseInt(month) + '月'
+    })
+
+    order_info['by_month']['count'] = monthEntries.map(entry => entry[1].count)
+    order_info['by_month']['price'] = monthEntries.map(entry => entry[1].price)
+}
+
+function finalize_monthly_data() {
+    // リアルタイム更新関数を呼び出し
+    update_monthly_chart_data()
+
+    // 月別データが1ヶ月以上ある場合のみ有効化（念のため再チェック）
+    const monthEntries = Array.from(order_info['month_data'].entries())
+    order_info['month_data_available'] = monthEntries.length >= 1
+
+    // チェックボックスの有効化
+    if (order_info['month_data_available']) {
+        document.getElementById('chart_monthly_view').disabled = false
     }
 }
 
@@ -189,13 +253,23 @@ function get_detail_in_order(order, index, mode, year, callback) {
                 return callback()
             }
 
+            // この注文の合計金額を計算
+            let order_total_price = 0
             for (item of response['list']) {
                 item['date'] = response['date']
                 item_list.push(item)
                 order_info['price_total'] += item['price']
                 order_info['by_year']['price'][year_index(year)] += item['price']
-                chart_order_update()
+                order_total_price += item['price']
             }
+
+            // 月別データの収集は注文単位で行う（注文件数1件、合計金額）
+            if (response['list'].length > 0) {
+                collect_monthly_data(response['date'], 1, order_total_price)
+            }
+
+            // チャート更新は月別データ収集後に実行
+            chart_order_update()
             notify_progress()
             callback(response)
         }
@@ -420,6 +494,9 @@ async function get_year_list() {
 
             order_info['count_total'] = order_info['count_done']
             notify_progress()
+
+            // 月別データの最終化
+            finalize_monthly_data()
 
             worker_destroy()
 
