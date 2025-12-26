@@ -407,7 +407,7 @@ function get_order_count_in_year(year, callback) {
 }
 
 async function get_year_list() {
-    new Promise((resolve) => {
+    return new Promise((resolve) => {
         cmd_handle(
             {
                 to: 'background',
