@@ -29,13 +29,13 @@ function year_list_page_parse() {
     year_list = []
 
     const year_count = document.xpath(
-        'count(//span[contains(@class, "a-dropdown-container")]//option[contains(@id, "orderFilterEntry-year")])'
+        'count(//select[@id="time-filter"]/option[starts-with(@value, "year-")])'
     )
 
     for (var i = 0; i < year_count; i++) {
         const year_text = document
             .xpath(
-                '//span[contains(@class, "a-dropdown-container")]//option[contains(@id, "orderFilterEntry-year")][' +
+                '//select[@id="time-filter"]/option[starts-with(@value, "year-")][' +
                     (i + 1) +
                     ']'
             )[0]
@@ -51,7 +51,7 @@ function year_list_page_parse() {
 
 function order_count_page_parse() {
     const order_count_text = document
-        .xpath('//label[@for="orderFilter"]//span[contains(@class, "num-orders")]')[0]
+        .xpath('//label[@for="time-filter"]//span[contains(@class, "num-orders")]')[0]
         .innerText.trim()
 
     const order_count = parseInt(order_count_text.replace('件', ''))
@@ -62,14 +62,14 @@ function order_count_page_parse() {
 }
 
 function order_list_page_parse() {
-    const order_count = document.xpath('count(//div[contains(@class, " order ")])')
+    const order_count = document.xpath('count(//div[contains(@class, "order-card")])')
     log.info({ order_count: order_count })
 
     detail_page_list = []
     for (var i = 0; i < order_count; i++) {
-        const parent_xpath = '//div[contains(@class, " order ")][' + (i + 1) + ']'
+        const parent_xpath = '//div[contains(@class, "order-card")][' + (i + 1) + ']'
         const date = document
-            .xpath(parent_xpath + '//div[contains(@class, "order-info")] // span[contains(@class, "value")]')[0]
+            .xpath(parent_xpath + '//div[contains(@class, "order-header")]//span[contains(@class, "a-color-secondary") and contains(@class, "aok-break-word")]')[0]
             .innerText.trim()
         const url = document.xpath(parent_xpath + '//a[contains(text(), "注文内容を表示")]')[0].href
 
